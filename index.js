@@ -43,49 +43,42 @@ client.on("messageCreate", async (message) => {
     // --------------------------
     let content = message.content || " ";
 
-    // --------------------------
-    // Clean reply formatting
-    // --------------------------
-    if (message.reference?.messageId) {
-      try {
-        const replied = await message.channel.messages.fetch(
-          message.reference.messageId
-        );
+// Clean reply formatting with clickable header
+if (message.reference?.messageId) {
+  try {
+    const replied = await message.channel.messages.fetch(
+      message.reference.messageId
+    );
 
-        const author = replied.member?.displayName || replied.author.username;
+    const author =
+      replied.member?.displayName || replied.author.username;
 
-        // Start with replied content or placeholder
-        let base =
-          replied.content?.trim()
-            ? replied.content
-            : (replied.attachments?.size ? "[attachment]" : "[message]");
+    let base =
+      replied.content?.trim()
+        ? replied.content
+        : (replied.attachments?.size ? "[attachment]" : "[message]");
 
-        // Strong anti-nesting cleanup:
-        // - removes any previous "Replying to ..." header lines
-        // - removes any previous discord jump-link lines
-        // - removes blocks of quote lines
-        base = base
-          .replace(/^.*Replying to.*\n?/gmi, "")
-          .replace(/^https?:\/\/discord\.com\/channels\/\S+\n?/gmi, "")
-          .replace(/^(>\s?.*\n)+/gm, "")
-          .trim();
+    // Remove previous reply formatting from mirrored messages
+    base = base
+      .replace(/^.*Replying to.*\n?/gmi, "")
+      .replace(/^https?:\/\/discord\.com\/channels\/\S+\n?/gmi, "")
+      .replace(/^(>\s?.*\n)+/gm, "")
+      .trim();
 
-        const snippet = (base || "[message]")
-          .replace(/\s+/g, " ")
-          .slice(0, 120);
+    const snippet = (base || "[message]")
+      .replace(/\s+/g, " ")
+      .slice(0, 120);
 
-        // Inline jump link (clickable) without preview
-        const jump = `<${replied.url}>`;
+    // 🔥 Make the entire header clickable
+    const header = `[↩ Replying to ${author}](${replied.url})`;
 
-        // Nice compact format: one header line + one quote line
-        content =
-          `↩️ **Replying to ${author}** · ${jump}\n` +
-          `> ${snippet}\n\n` +
-          content;
-      } catch {
-        // can't fetch replied message; ignore reply formatting
-      }
-    }
+    content =
+      `${header}\n` +
+      `> ${snippet}\n\n` +
+      content;
+
+  } catch {}
+}
 
     // --------------------------
     // Attachments (embed correctly)
