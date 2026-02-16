@@ -1,4 +1,22 @@
 const { Client, GatewayIntentBits, WebhookClient } = require("discord.js");
+const http = require("http");
+
+// ---------------------------
+// Railway Health Server Fix
+// ---------------------------
+
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("ok");
+}).listen(PORT, () => {
+  console.log(`Health server listening on ${PORT}`);
+});
+
+// ---------------------------
+// Discord Bot
+// ---------------------------
 
 const client = new Client({
   intents: [
@@ -8,6 +26,10 @@ const client = new Client({
   ]
 });
 
+// Prevent accidental double-processing
+const seen = new Set();
+setInterval(() => seen.clear(), 60_000);
+
 client.once("clientReady", () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
@@ -15,6 +37,9 @@ client.once("clientReady", () => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot || message.webhookId) return;
   if (!message.guild) return;
+
+  if (seen.has(message.id)) return;
+  seen.add(message.id);
 
   try {
     // Fetch or create webhook
@@ -61,10 +86,11 @@ client.on("messageCreate", async (message) => {
       name: a.name
     }));
 
-    // Delete original message
-    await message.delete();
+    // Safe delete (ignore already-deleted)
+    await message.delete().catch((err) => {
+      if (err?.code !== 10008) console.error(err);
+    });
 
-    // Send via webhook
     const hook = new WebhookClient({ url: webhook.url });
 
     await hook.send({
@@ -83,13 +109,5 @@ client.on("messageCreate", async (message) => {
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
-const http = require("http");
-
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("ok");
-}).listen(PORT, () => console.log(`Health server on ${PORT}`));
-
-// Login with Railway env variable
+// Login
 client.login(process.env.TOKEN);
