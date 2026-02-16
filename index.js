@@ -83,5 +83,13 @@ client.on("messageCreate", async (message) => {
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
+const http = require("http");
+
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "text/plain" });
+  res.end("ok");
+}).listen(PORT, () => console.log(`Health server on ${PORT}`));
+
 // Login with Railway env variable
 client.login(process.env.TOKEN);
