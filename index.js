@@ -8,7 +8,7 @@ const client = new Client({
   ]
 });
 
-client.on("ready", () => {
+client.once("clientReady", () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
@@ -17,7 +17,7 @@ client.on("messageCreate", async (message) => {
   if (!message.guild) return;
 
   try {
-    // Get or create webhook
+    // Fetch or create webhook
     let webhooks = await message.channel.fetchWebhooks();
     let webhook = webhooks.find(w => w.owner?.id === client.user.id);
 
@@ -27,10 +27,13 @@ client.on("messageCreate", async (message) => {
       });
     }
 
-    // --- BUILD CONTENT (WITH REPLY SUPPORT) ---
+    // --------------------------
+    // Build message content
+    // --------------------------
 
     let content = message.content || " ";
 
+    // Reply support
     if (message.reference) {
       try {
         const replied = await message.channel.messages.fetch(
@@ -43,18 +46,27 @@ client.on("messageCreate", async (message) => {
         const snippet =
           (replied.content || "[attachment]").slice(0, 150);
 
-        content = `> **${author}**: ${snippet}\n${content}`;
+        const link = replied.url;
+
+        content = `> **${author}**: ${snippet}\n🔗 ${link}\n${content}`;
       } catch {}
     }
 
-    // Attachments
-    const files = [...message.attachments.values()].map(a => a.url);
+    // --------------------------
+    // Collect attachments BEFORE delete
+    // --------------------------
 
-    // Delete original
+    const files = [...message.attachments.values()].map(a => ({
+      attachment: a.url,
+      name: a.name
+    }));
+
+    // Delete original message
     await message.delete();
 
-    // Send as webhook
+    // Send via webhook
     const hook = new WebhookClient({ url: webhook.url });
+
     await hook.send({
       content,
       username: message.member?.displayName || message.author.username,
@@ -67,4 +79,9 @@ client.on("messageCreate", async (message) => {
   }
 });
 
+// Safety logging
+process.on("unhandledRejection", console.error);
+process.on("uncaughtException", console.error);
+
+// Login with Railway env variable
 client.login(process.env.TOKEN);
