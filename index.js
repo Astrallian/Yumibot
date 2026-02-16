@@ -58,24 +58,47 @@ client.on("messageCreate", async (message) => {
 
     let content = message.content || " ";
 
-    // Reply support
-    if (message.reference) {
-      try {
-        const replied = await message.channel.messages.fetch(
-          message.reference.messageId
-        );
+    // Reply support (clean + anti-nesting)
+if (message.reference?.messageId) {
+  try {
+    const replied = await message.channel.messages.fetch(message.reference.messageId);
 
-        const author =
-          replied.member?.displayName || replied.author.username;
+    const author = replied.member?.displayName || replied.author.username;
+    const jump = `<${replied.url}>`; // < > prevents embed preview
 
-        const snippet =
-          (replied.content || "[attachment]").slice(0, 150);
+    // Base text or attachment placeholder
+    let base =
+      replied.content?.trim()
+        ? replied.content
+        : (replied.attachments?.size ? "[attachment]" : "[message]");
 
-        const link = replied.url;
+    // --- Anti-nesting cleanup ---
+    // If the replied message is from our webhook mirror, its content may start with:
+    // "↩️ Replying to ..." and/or a quoted line "> ..."
+    // We strip those so replies don't become "Name: > Name: ..."
+    base = base
+      // remove our reply header line if present
+      .replace(/^↩️\s*\*\*Replying to.*\n?/m, "")
+      // remove a single quoted line (the snippet we add)
+      .replace(/^>\s.*\n?/m, "")
+      // remove extra blank lines
+      .trim();
 
-        content = `> **${author}**: ${snippet}\n🔗 ${link}\n${content}`;
-      } catch {}
-    }
+    // Make snippet single-line and short
+    const snippet = (base || "[message]")
+      .replace(/\s+/g, " ")
+      .slice(0, 140);
+
+    // Build clean reply format
+    content =
+      `↩️ **Replying to ${author}** · ${jump}\n` +
+      `> ${snippet}\n\n` +
+      content;
+
+  } catch {
+    // can't fetch replied message; ignore reply formatting
+  }
+}
 
     // --------------------------
     // Collect attachments BEFORE delete
