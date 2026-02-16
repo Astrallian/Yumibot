@@ -2,22 +2,21 @@ const { Client, GatewayIntentBits, WebhookClient } = require("discord.js");
 const http = require("http");
 
 // ---------------------------
-// Railway Health Server Fix
+// Railway "health" server
+// (keeps Railway networking happy)
 // ---------------------------
-
 const PORT = process.env.PORT || 3000;
 
-http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("ok");
-}).listen(PORT, () => {
-  console.log(`Health server listening on ${PORT}`);
-});
+http
+  .createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("ok");
+  })
+  .listen(PORT, () => console.log(`Health server listening on ${PORT}`));
 
 // ---------------------------
-// Discord Bot
+// Discord bot
 // ---------------------------
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -26,7 +25,7 @@ const client = new Client({
   ]
 });
 
-// Prevent accidental double-processing
+// Prevent accidental double-processing (reconnects / rare duplicates)
 const seen = new Set();
 setInterval(() => seen.clear(), 60_000);
 
@@ -35,85 +34,77 @@ client.once("clientReady", () => {
 });
 
 client.on("messageCreate", async (message) => {
+  // Ignore bots + webhooks + DMs
   if (message.author.bot || message.webhookId) return;
   if (!message.guild) return;
 
+  // Duplicate guard
   if (seen.has(message.id)) return;
   seen.add(message.id);
 
   try {
-    // Fetch or create webhook
-    let webhooks = await message.channel.fetchWebhooks();
-    let webhook = webhooks.find(w => w.owner?.id === client.user.id);
+    // Fetch or create webhook owned by this bot
+    const webhooks = await message.channel.fetchWebhooks();
+    let webhook = webhooks.find((w) => w.owner?.id === client.user.id);
 
     if (!webhook) {
-      webhook = await message.channel.createWebhook({
-        name: "Mirror",
-      });
+      webhook = await message.channel.createWebhook({ name: "Mirror" });
     }
 
-    // --------------------------
-    // Build message content
-    // --------------------------
-
+    // ------------- Build content -------------
     let content = message.content || " ";
 
-    // Reply support (clean + anti-nesting)
-if (message.reference?.messageId) {
-  try {
-    const replied = await message.channel.messages.fetch(message.reference.messageId);
+    // Clean reply formatting (with anti-nesting)
+    if (message.reference?.messageId) {
+      try {
+        const replied = await message.channel.messages.fetch(
+          message.reference.messageId
+        );
 
-    const author = replied.member?.displayName || replied.author.username;
-    const jump = `<${replied.url}>`; // < > prevents embed preview
+        const author = replied.member?.displayName || replied.author.username;
+        const jump = `<${replied.url}>`; // < > prevents link preview
 
-    // Base text or attachment placeholder
-    let base =
-      replied.content?.trim()
-        ? replied.content
-        : (replied.attachments?.size ? "[attachment]" : "[message]");
+        // If replied message has no text, show attachment placeholder
+        let base =
+          replied.content?.trim()
+            ? replied.content
+            : (replied.attachments?.size ? "[attachment]" : "[message]");
 
-    // --- Anti-nesting cleanup ---
-    // If the replied message is from our webhook mirror, its content may start with:
-    // "↩️ Replying to ..." and/or a quoted line "> ..."
-    // We strip those so replies don't become "Name: > Name: ..."
-    base = base
-      // remove our reply header line if present
-      .replace(/^↩️\s*\*\*Replying to.*\n?/m, "")
-      // remove a single quoted line (the snippet we add)
-      .replace(/^>\s.*\n?/m, "")
-      // remove extra blank lines
-      .trim();
+        // --- Anti-nesting cleanup ---
+        // Remove OUR bot’s reply header + quote if the replied message is mirrored.
+        // This stops: "Rentarou: > Panoli: ..."
+        base = base
+          .replace(/^↩️\s*\*\*Replying to.*\n?/m, "") // remove header line
+          .replace(/^>\s.*\n?/m, "")                  // remove 1 quote line
+          .trim();
 
-    // Make snippet single-line and short
-    const snippet = (base || "[message]")
-      .replace(/\s+/g, " ")
-      .slice(0, 140);
+        const snippet = (base || "[message]")
+          .replace(/\s+/g, " ")
+          .slice(0, 140);
 
-    // Build clean reply format
-    content =
-      `↩️ **Replying to ${author}** · ${jump}\n` +
-      `> ${snippet}\n\n` +
-      content;
+        content =
+          `↩️ **Replying to ${author}** · ${jump}\n` +
+          `> ${snippet}\n\n` +
+          content;
+      } catch {
+        // If we can’t fetch replied message, just send normal content
+      }
+    }
 
-  } catch {
-    // can't fetch replied message; ignore reply formatting
-  }
-}
-
-    // --------------------------
-    // Collect attachments BEFORE delete
-    // --------------------------
-
-    const files = [...message.attachments.values()].map(a => ({
+    // ------------- Attachments (embed correctly) -------------
+    // IMPORTANT: capture BEFORE deletion
+    const files = [...message.attachments.values()].map((a) => ({
       attachment: a.url,
       name: a.name
     }));
 
-    // Safe delete (ignore already-deleted)
+    // ------------- Delete original safely -------------
     await message.delete().catch((err) => {
+      // 10008 = Unknown Message (already deleted)
       if (err?.code !== 10008) console.error(err);
     });
 
+    // ------------- Send via webhook -------------
     const hook = new WebhookClient({ url: webhook.url });
 
     await hook.send({
@@ -122,15 +113,14 @@ if (message.reference?.messageId) {
       avatarURL: message.author.displayAvatarURL(),
       files
     });
-
   } catch (err) {
     console.error(err);
   }
 });
 
-// Safety logging
+// Log crashes instead of silently dying
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
-// Login
+// Login with Railway variable
 client.login(process.env.TOKEN);
