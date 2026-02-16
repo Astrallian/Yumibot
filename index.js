@@ -1,16 +1,6 @@
 const { Client, GatewayIntentBits, WebhookClient } = require("discord.js");
 const http = require("http");
-
-// ---------------------------
-// Railway health server
-// ---------------------------
-const PORT = process.env.PORT || 3000;
-http
-  .createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("ok");
-  })
-  .listen(PORT, () => console.log(`Health server listening on ${PORT}`));
+console.log("BOOT INSTANCE:", process.env.RAILWAY_SERVICE_NAME, process.env.RAILWAY_REPLICA_ID, new Date().toISOString());
 
 // ---------------------------
 // Discord bot
