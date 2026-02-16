@@ -2,11 +2,9 @@ const { Client, GatewayIntentBits, WebhookClient } = require("discord.js");
 const http = require("http");
 
 // ---------------------------
-// Railway "health" server
-// (keeps Railway networking happy)
+// Railway health server
 // ---------------------------
 const PORT = process.env.PORT || 3000;
-
 http
   .createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
@@ -25,7 +23,7 @@ const client = new Client({
   ]
 });
 
-// Prevent accidental double-processing (reconnects / rare duplicates)
+// Prevent accidental double-processing
 const seen = new Set();
 setInterval(() => seen.clear(), 60_000);
 
@@ -34,7 +32,6 @@ client.once("clientReady", () => {
 });
 
 client.on("messageCreate", async (message) => {
-  // Ignore bots + webhooks + DMs
   if (message.author.bot || message.webhookId) return;
   if (!message.guild) return;
 
@@ -43,7 +40,7 @@ client.on("messageCreate", async (message) => {
   seen.add(message.id);
 
   try {
-    // Fetch or create webhook owned by this bot
+    // Get or create webhook owned by this bot
     const webhooks = await message.channel.fetchWebhooks();
     let webhook = webhooks.find((w) => w.owner?.id === client.user.id);
 
@@ -51,10 +48,14 @@ client.on("messageCreate", async (message) => {
       webhook = await message.channel.createWebhook({ name: "Mirror" });
     }
 
-    // ------------- Build content -------------
+    // --------------------------
+    // Build outgoing content
+    // --------------------------
     let content = message.content || " ";
 
-    // Clean reply formatting (with anti-nesting)
+    // --------------------------
+    // Clean reply formatting
+    // --------------------------
     if (message.reference?.messageId) {
       try {
         const replied = await message.channel.messages.fetch(
@@ -62,49 +63,59 @@ client.on("messageCreate", async (message) => {
         );
 
         const author = replied.member?.displayName || replied.author.username;
-        const jump = `<${replied.url}>`; // < > prevents link preview
 
-        // If replied message has no text, show attachment placeholder
+        // Start with replied content or placeholder
         let base =
           replied.content?.trim()
             ? replied.content
             : (replied.attachments?.size ? "[attachment]" : "[message]");
 
-        // --- Anti-nesting cleanup ---
-        // Remove OUR bot’s reply header + quote if the replied message is mirrored.
-        // This stops: "Rentarou: > Panoli: ..."
+        // Strong anti-nesting cleanup:
+        // - removes any previous "Replying to ..." header lines
+        // - removes any previous discord jump-link lines
+        // - removes blocks of quote lines
         base = base
-          .replace(/^↩️\s*\*\*Replying to.*\n?/m, "") // remove header line
-          .replace(/^>\s.*\n?/m, "")                  // remove 1 quote line
+          .replace(/^.*Replying to.*\n?/gmi, "")
+          .replace(/^https?:\/\/discord\.com\/channels\/\S+\n?/gmi, "")
+          .replace(/^(>\s?.*\n)+/gm, "")
           .trim();
 
         const snippet = (base || "[message]")
           .replace(/\s+/g, " ")
-          .slice(0, 140);
+          .slice(0, 120);
 
+        // Inline jump link (clickable) without preview
+        const jump = `<${replied.url}>`;
+
+        // Nice compact format: one header line + one quote line
         content =
           `↩️ **Replying to ${author}** · ${jump}\n` +
           `> ${snippet}\n\n` +
           content;
       } catch {
-        // If we can’t fetch replied message, just send normal content
+        // can't fetch replied message; ignore reply formatting
       }
     }
 
-    // ------------- Attachments (embed correctly) -------------
-    // IMPORTANT: capture BEFORE deletion
+    // --------------------------
+    // Attachments (embed correctly)
+    // --------------------------
     const files = [...message.attachments.values()].map((a) => ({
       attachment: a.url,
       name: a.name
     }));
 
-    // ------------- Delete original safely -------------
+    // --------------------------
+    // Delete original safely
+    // --------------------------
     await message.delete().catch((err) => {
       // 10008 = Unknown Message (already deleted)
       if (err?.code !== 10008) console.error(err);
     });
 
-    // ------------- Send via webhook -------------
+    // --------------------------
+    // Send via webhook
+    // --------------------------
     const hook = new WebhookClient({ url: webhook.url });
 
     await hook.send({
@@ -118,9 +129,9 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// Log crashes instead of silently dying
+// Safety logging
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
 
-// Login with Railway variable
+// Login
 client.login(process.env.TOKEN);
