@@ -100,7 +100,7 @@ client.on("messageCreate", async (message) => {
         const snippet = cleanSnippet(base || "[message]", 140);
 
         // Make the header clickable (no raw URL line)
-        const header = `[↩️ Replying to ${author}](${replied.url})`;
+        const header = `[↩ Replying to ${author}](${replied.url})`;
 
         content = `${header}\n> ${snippet}\n\n${content}`;
       } catch {
